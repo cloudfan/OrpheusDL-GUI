@@ -54,6 +54,8 @@ jobs:
           pip install --no-deps --upgrade --target vendor/librespot git+https://github.com/kokarare1212/librespot-python || exit /b 1
           curl -fL "https://raw.githubusercontent.com/bascurtiz/orpheusdl-spotify/main/librespot/core.py" -o "vendor\librespot\librespot\core.py" || echo [WARN] librespot patch not applied
           pip install --no-cache-dir --force-reinstall unplayplay==0.0.9 || exit /b 1
+          for /d %%m in (modules\*) do if exist "%%m\requirements.txt" pip install -r "%%m\requirements.txt"
+          pip install capstone unicorn votify || echo [WARN] optional Spotify deps not installed
           pip install pyinstaller || exit /b 1
 
       - name: Fetch extras (Deno, Spotify.dll, Shaka Packager)
@@ -64,20 +66,43 @@ jobs:
           python installer\bootstrap_extras.py --shaka --mp4decrypt || echo [WARN] Shaka/mp4decrypt not downloaded
           exit /b 0
 
+      - name: Generate default config\settings.json (normally made by first GUI launch)
+        working-directory: ${{ runner.temp }}\build
+        shell: pwsh
+        env:
+          PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+        run: |
+          python -c "from orpheus.core import Orpheus; Orpheus()"
+          if (-not (Test-Path config\settings.json)) {
+            Write-Host "Core did not write settings.json; launching GUI briefly"
+            $p = Start-Process python -ArgumentList gui.py -PassThru
+            for ($i = 0; $i -lt 60 -and -not (Test-Path config\settings.json); $i++) { Start-Sleep 2 }
+            Start-Sleep 5
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+          if (-not (Test-Path config\settings.json)) { throw "config\settings.json was not generated" }
+          Get-ChildItem config
+          exit 0
+
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
       - name: Build exe + installer
         working-directory: ${{ runner.temp }}\build
+        env:
+          PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
         run: python installer\build_installer.py --platform windows
 
       - name: Copy output back
+        if: always()
         run: |
           robocopy "%RUNNER_TEMP%\build\dist" out /E /NFL /NDL /NJH /NJS
           if %ERRORLEVEL% GEQ 8 exit /b 1
           exit /b 0
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: OrpheusDL-GUI-windows
           path: out/**
+          if-no-files-found: warn
