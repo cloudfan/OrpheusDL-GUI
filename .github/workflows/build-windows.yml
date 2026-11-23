@@ -1,0 +1,83 @@
+name: Build Windows exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Assemble OrpheusDL core + modules + GUI (mirrors installer\install_orpheus-win.bat)
+        run: |
+          git clone --depth 1 https://github.com/bascurtiz/OrpheusDL build || exit /b 1
+          cd build
+          if not exist config mkdir config
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-amazonmusic modules/amazonmusic
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-applemusic modules/applemusic
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-beatport modules/beatport
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-deezer modules/deezer
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-qobuz modules/qobuz
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-soundcloud modules/soundcloud
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-spotify modules/spotify
+          git clone --depth 1 --recurse-submodules https://github.com/bascurtiz/orpheusdl-tidal modules/tidal
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-youtube modules/youtube
+          git clone --depth 1 https://github.com/bascurtiz/orpheusdl-lrclib modules/lrclib
+          git clone --depth 1 https://github.com/OrfiDev/orpheusdl-musixmatch modules/musixmatch
+        working-directory: ${{ runner.temp }}
+
+      - uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Copy GUI source in
+        run: |
+          robocopy src "%RUNNER_TEMP%\build" /E /XD .git /NFL /NDL /NJH /NJS
+          if %ERRORLEVEL% GEQ 8 exit /b 1
+          exit /b 0
+
+      - name: Install Python dependencies
+        working-directory: ${{ runner.temp }}\build
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || exit /b 1
+          pip install -r requirements-gui.txt || exit /b 1
+          pip install --no-deps --upgrade --target vendor/librespot git+https://github.com/kokarare1212/librespot-python || exit /b 1
+          curl -fL "https://raw.githubusercontent.com/bascurtiz/orpheusdl-spotify/main/librespot/core.py" -o "vendor\librespot\librespot\core.py" || echo [WARN] librespot patch not applied
+          pip install --no-cache-dir --force-reinstall unplayplay==0.0.9 || exit /b 1
+          pip install pyinstaller || exit /b 1
+
+      - name: Fetch extras (Deno, Spotify.dll, Shaka Packager)
+        working-directory: ${{ runner.temp }}\build
+        run: |
+          curl -fL -o deno.zip https://github.com/denoland/deno/releases/download/v2.8.0/deno-x86_64-pc-windows-msvc.zip && tar -xf deno.zip && del deno.zip
+          curl -fL -o Spotify.dll http://orpheusdl-gui.x10.mx/Spotify.dll || echo [WARN] Spotify.dll not downloaded
+          python installer\bootstrap_extras.py --shaka --mp4decrypt || echo [WARN] Shaka/mp4decrypt not downloaded
+          exit /b 0
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build exe + installer
+        working-directory: ${{ runner.temp }}\build
+        run: python installer\build_installer.py --platform windows
+
+      - name: Copy output back
+        run: |
+          robocopy "%RUNNER_TEMP%\build\dist" out /E /NFL /NDL /NJH /NJS
+          if %ERRORLEVEL% GEQ 8 exit /b 1
+          exit /b 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OrpheusDL-GUI-windows
+          path: out/**
