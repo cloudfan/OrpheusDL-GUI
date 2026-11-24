@@ -59,6 +59,31 @@ for n in sorted(names):
         else:
             break
 
+# Also bundle the entire standard library (minus test/dev-tool packages), so
+# module versions that import stdlib bits not seen here (e.g. logging.handlers)
+# still work in the frozen exe.
+import pkgutil
+STDLIB_SKIP = {"test", "idlelib", "turtledemo", "lib2to3", "ensurepip", "venv",
+               "pydoc_data", "tkinter.test", "unittest.test", "__phello__",
+               "antigravity", "this", "turtle"}
+n_std = 0
+for name in sorted(getattr(sys, "stdlib_module_names", ())):
+    if name in STDLIB_SKIP or name.startswith("_") and name not in ("__future__",):
+        continue
+    try:
+        spec_ = importlib.util.find_spec(name)
+    except Exception:
+        spec_ = None
+    if spec_ is None:
+        continue
+    found.add(name); n_std += 1
+    if spec_.submodule_search_locations:
+        for m in pkgutil.walk_packages(spec_.submodule_search_locations, prefix=name + ".", onerror=lambda _n: None):
+            if any(part in ("test", "tests", "idle_test") for part in m.name.split(".")):
+                continue
+            found.add(m.name); n_std += 1
+print(f"[hiddenimports] + {n_std} standard-library modules")
+
 found = sorted(found)
 print(f"[hiddenimports] {len(found)} imports from {SCAN_DIRS}: {found}")
 
