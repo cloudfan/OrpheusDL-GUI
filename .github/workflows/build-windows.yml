@@ -84,6 +84,12 @@ jobs:
           Get-ChildItem config
           exit 0
 
+      - name: Bundle everything the on-disk modules import
+        working-directory: ${{ runner.temp }}\build
+        env:
+          PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+        run: python .github\scripts\add_module_hiddenimports.py
+
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
