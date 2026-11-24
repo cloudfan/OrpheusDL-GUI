@@ -59,6 +59,18 @@ for n in sorted(names):
         else:
             break
 
+# Packages the modules import lazily / partially: bundle all their submodules.
+import pkgutil
+for pkg in ("gamdl",):
+    try:
+        sp = importlib.util.find_spec(pkg)
+    except Exception:
+        sp = None
+    if sp and sp.submodule_search_locations:
+        found.add(pkg)
+        for m in pkgutil.walk_packages(sp.submodule_search_locations, prefix=pkg + ".", onerror=lambda _n: None):
+            found.add(m.name)
+
 # Also bundle the entire standard library (minus test/dev-tool packages), so
 # module versions that import stdlib bits not seen here (e.g. logging.handlers)
 # still work in the frozen exe.

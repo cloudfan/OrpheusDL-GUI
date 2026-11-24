@@ -56,6 +56,9 @@ jobs:
           pip install --no-cache-dir --force-reinstall unplayplay==0.0.9 || exit /b 1
           for /d %%m in (modules\*) do if exist "%%m\requirements.txt" pip install -r "%%m\requirements.txt"
           pip install capstone unicorn votify || echo [WARN] optional Spotify deps not installed
+          rem gamdl 4.x (Nov 2026) removed gamdl.downloader/gamdl.interface, which the Apple Music module still uses
+          pip install "gamdl>=3.8.5,<4" || exit /b 1
+          python -c "import gamdl.api, gamdl.downloader, gamdl.interface, gamdl.downloader.enums, gamdl.interface.enums; print('gamdl OK', __import__('importlib.metadata').metadata.version('gamdl'))" || exit /b 1
           pip install pyinstaller || exit /b 1
 
       - name: Fetch extras (Deno, Spotify.dll, Shaka Packager)
